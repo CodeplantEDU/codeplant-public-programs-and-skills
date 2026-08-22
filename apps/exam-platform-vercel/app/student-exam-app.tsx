@@ -146,21 +146,37 @@ export function StudentExamApp() {
   }, []);
 
   useEffect(() => {
+    let blurTimer: ReturnType<typeof setTimeout> | null = null;
+    const cancelPendingBlur = () => {
+      if (blurTimer !== null) clearTimeout(blurTimer);
+      blurTimer = null;
+    };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
+        cancelPendingBlur();
         sendEvent("visibility_hidden", { visibilityState: document.visibilityState }, true);
       } else {
         sendEvent("visibility_visible", { visibilityState: document.visibilityState });
       }
     };
-    const onBlur = () => sendEvent("window_blur");
-    const onFocus = () => sendEvent("window_focus");
+    const onBlur = () => {
+      cancelPendingBlur();
+      blurTimer = setTimeout(() => {
+        blurTimer = null;
+        if (document.visibilityState === "visible") sendEvent("window_blur");
+      }, 300);
+    };
+    const onFocus = () => {
+      cancelPendingBlur();
+      sendEvent("window_focus");
+    };
     const onPageHide = () => sendEvent("pagehide", {}, true);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);
     window.addEventListener("pagehide", onPageHide);
     return () => {
+      cancelPendingBlur();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("focus", onFocus);

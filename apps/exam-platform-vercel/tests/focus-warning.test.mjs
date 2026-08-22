@@ -10,8 +10,12 @@ const [eventRoute, heartbeatRoute, studentApp, adminApp] = await Promise.all([
 
 assert.match(eventRoute, /violationCount >= 2/);
 assert.match(eventRoute, /duplicateViolation/);
+assert.match(eventRoute, /eventType === "window_blur"/);
+assert.match(eventRoute, /'visibility_hidden', 'window_blur', 'pagehide', 'fullscreen_exit'/);
 assert.match(eventRoute, /violationCount/);
 assert.match(heartbeatRoute, /violationCount/);
+assert.match(studentApp, /document\.visibilityState === "visible"/);
+assert.match(studentApp, /setTimeout\(\(\) =>/);
 assert.match(studentApp, /초점 이탈 경고 \{focusWarning\}회입니다\./);
 assert.match(studentApp, /확인하고 계속 응시/);
 assert.match(adminApp, /이탈 1회 경고·2회 실격/);

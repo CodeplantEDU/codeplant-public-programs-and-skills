@@ -18,10 +18,10 @@ export async function POST(request: Request) {
     const details = JSON.stringify(body.details ?? {}).slice(0, 2_000);
     const now = new Date().toISOString();
     const db = database();
-    const disqualifying = eventType === "visibility_hidden" || eventType === "pagehide" || eventType === "fullscreen_exit";
+    const disqualifying = eventType === "visibility_hidden" || eventType === "window_blur" || eventType === "pagehide" || eventType === "fullscreen_exit";
     const recentViolation = disqualifying
       ? await db.prepare(`SELECT created_at FROM events
-          WHERE student_id = ? AND event_type IN ('visibility_hidden', 'pagehide', 'fullscreen_exit')
+          WHERE student_id = ? AND event_type IN ('visibility_hidden', 'window_blur', 'pagehide', 'fullscreen_exit')
           ORDER BY id DESC LIMIT 1`).bind(studentId).first<{ created_at: string }>()
       : null;
     await db.prepare("INSERT INTO events (student_id, event_type, details, created_at) VALUES (?, ?, ?, ?)")
