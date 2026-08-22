@@ -1,0 +1,233 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Net.Sockets;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Windows.Forms;
+
+[assembly: AssemblyTitle("CODEPLANT RDP Display")]
+[assembly: AssemblyDescription("Tailscale RDP monitor-selection launcher for CODEPLANT")]
+[assembly: AssemblyCompany("CODEPLANT")]
+[assembly: AssemblyProduct("CODEPLANT RDP Display Launcher")]
+[assembly: AssemblyVersion("1.3.3.0")]
+[assembly: AssemblyFileVersion("1.3.3.0")]
+
+internal static class Program
+{
+    private const string HostAddress = "__HOST_ADDRESS__";
+    private const string DefaultMonitors = "__DEFAULT_MONITORS__";
+    private const int RdpPort = 3389;
+
+    [STAThread]
+    private static int Main(string[] args)
+    {
+        if (args.Length > 0 && string.Equals(args[0], "/self-test", StringComparison.OrdinalIgnoreCase))
+        {
+            string singleConfig = BuildRdpConfig("1");
+            string tripleConfig = BuildRdpConfig("1,6,7");
+            return string.IsNullOrWhiteSpace(HostAddress) ||
+                   HostAddress.Contains("__") ||
+                   string.IsNullOrWhiteSpace(DefaultMonitors) ||
+                   DefaultMonitors.Contains("__") ||
+                   !singleConfig.Contains("selectedmonitors:s:1") ||
+                   !tripleConfig.Contains("selectedmonitors:s:1,6,7") ||
+                   !tripleConfig.Contains("use multimon:i:1") ||
+                   !tripleConfig.Contains("dynamic resolution:i:0") ? 1 : 0;
+        }
+
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+
+        try
+        {
+            Process monitorList = Process.Start(new ProcessStartInfo
+            {
+                FileName = Environment.ExpandEnvironmentVariables(@"%SystemRoot%\System32\mstsc.exe"),
+                Arguments = "/l",
+                UseShellExecute = true
+            });
+            if (monitorList != null)
+            {
+                monitorList.WaitForExit();
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "RDP 모니터 목록을 열지 못했습니다.\n\n" + ex.Message,
+                "CODEPLANT 모니터 확인",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return 4;
+        }
+
+        string selectedMonitors;
+        while (true)
+        {
+            string input = ShowMonitorInputDialog(DefaultMonitors);
+            if (input == null)
+            {
+                return 5;
+            }
+
+            selectedMonitors = Regex.Replace(input, @"\s+", string.Empty);
+            string[] monitorIds = selectedMonitors.Split(',');
+            if (Regex.IsMatch(selectedMonitors, @"^\d+(,\d+)*$") &&
+                monitorIds.Length >= 1 &&
+                new System.Collections.Generic.HashSet<string>(monitorIds).Count == monitorIds.Length)
+            {
+                break;
+            }
+
+            MessageBox.Show(
+                "모니터 번호를 쉼표로 구분해 입력하세요.\n\n" +
+                "단일: 1\n듀얼: 1,6\n3개: 1,6,7\n\n" +
+                "중복되지 않은 번호를 한 개 이상 입력해야 합니다.",
+                "모니터 번호 확인",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        if (!CanReachHost(HostAddress, RdpPort, 4000))
+        {
+            DialogResult answer = MessageBox.Show(
+                "원격 PC에 연결할 수 없습니다.\n\n" +
+                "1. 노트북과 호스트에서 Tailscale이 켜져 있는지 확인하세요.\n" +
+                "2. 호스트 PC의 전원과 절전 상태를 확인하세요.\n\n" +
+                "그래도 원격 데스크톱 연결을 실행하시겠습니까?",
+                "CODEPLANT 원격 연결",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+
+            if (answer != DialogResult.Yes)
+            {
+                return 2;
+            }
+        }
+
+        try
+        {
+            string rdpPath = Path.Combine(Path.GetTempPath(), "CODEPLANT-RDP-Display.rdp");
+            File.WriteAllText(rdpPath, BuildRdpConfig(selectedMonitors), new UnicodeEncoding(false, true));
+
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = Environment.ExpandEnvironmentVariables(@"%SystemRoot%\System32\mstsc.exe"),
+                Arguments = "\"" + rdpPath + "\"",
+                UseShellExecute = true
+            };
+            Process.Start(startInfo);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "원격 데스크톱 연결을 실행하지 못했습니다.\n\n" + ex.Message,
+                "CODEPLANT 원격 연결",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return 3;
+        }
+    }
+
+    private static string BuildRdpConfig(string selectedMonitors)
+    {
+        return string.Join("\r\n", new[]
+        {
+            "screen mode id:i:2",
+            "use multimon:i:1",
+            "selectedmonitors:s:" + selectedMonitors,
+            "singlemoninwindowedmode:i:0",
+            "dynamic resolution:i:0",
+            "smart sizing:i:0",
+            "prompt for credentials:i:1",
+            "authentication level:i:2",
+            "enablecredsspsupport:i:1",
+            "networkautodetect:i:1",
+            "bandwidthautodetect:i:1",
+            "compression:i:1",
+            "full address:s:" + HostAddress,
+            string.Empty
+        });
+    }
+
+    private static string ShowMonitorInputDialog(string defaultValue)
+    {
+        using (Form dialog = new Form())
+        using (Label label = new Label())
+        using (TextBox input = new TextBox())
+        using (Button ok = new Button())
+        using (Button cancel = new Button())
+        {
+            dialog.Text = "CODEPLANT RDP 모니터 선택";
+            dialog.ClientSize = new System.Drawing.Size(460, 150);
+            dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+            dialog.MaximizeBox = false;
+            dialog.MinimizeBox = false;
+            dialog.StartPosition = FormStartPosition.CenterScreen;
+            dialog.ShowInTaskbar = true;
+            try
+            {
+                dialog.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            }
+            catch
+            {
+                // Keep the default icon if Windows cannot read the embedded icon.
+            }
+
+            label.Text = "RDP 모니터 번호 입력 (단일 1 / 듀얼 1,6 / 3개 1,6,7)";
+            label.AutoSize = true;
+            label.Location = new System.Drawing.Point(18, 18);
+
+            input.Text = defaultValue;
+            input.Location = new System.Drawing.Point(20, 50);
+            input.Size = new System.Drawing.Size(420, 25);
+            input.SelectAll();
+
+            ok.Text = "연결";
+            ok.DialogResult = DialogResult.OK;
+            ok.Location = new System.Drawing.Point(280, 100);
+            ok.Size = new System.Drawing.Size(75, 28);
+
+            cancel.Text = "취소";
+            cancel.DialogResult = DialogResult.Cancel;
+            cancel.Location = new System.Drawing.Point(365, 100);
+            cancel.Size = new System.Drawing.Size(75, 28);
+
+            dialog.Controls.Add(label);
+            dialog.Controls.Add(input);
+            dialog.Controls.Add(ok);
+            dialog.Controls.Add(cancel);
+            dialog.AcceptButton = ok;
+            dialog.CancelButton = cancel;
+
+            return dialog.ShowDialog() == DialogResult.OK ? input.Text : null;
+        }
+    }
+
+    private static bool CanReachHost(string host, int port, int timeoutMilliseconds)
+    {
+        using (TcpClient client = new TcpClient())
+        {
+            try
+            {
+                IAsyncResult result = client.BeginConnect(host, port, null, null);
+                bool connected = result.AsyncWaitHandle.WaitOne(timeoutMilliseconds);
+                if (!connected)
+                {
+                    return false;
+                }
+
+                client.EndConnect(result);
+                return client.Connected;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+}

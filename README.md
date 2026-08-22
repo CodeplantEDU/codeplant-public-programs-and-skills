@@ -1,6 +1,6 @@
 # CODEPLANT 공개 프로그램 및 스킬
 
-학교·교육기관에서 수정하여 사용할 수 있는 공개 프로그램과 Codex 스킬 모음입니다. 첫 공개 버전에는 웹 시험 운영 예시와 한국어 문서 업무 스킬을 담았습니다.
+학교·교육기관에서 수정하여 사용할 수 있는 공개 프로그램과 Codex 스킬 모음입니다. 웹 시험 운영 예시, RDP 디스플레이 실행기, 한국어 문서 업무 스킬을 담았습니다.
 
 > 공개판에는 특정 학교의 실제 시험문제, 학생 답안, 관리자 암호가 포함되어 있지 않습니다. 화면과 기능을 이해할 수 있도록 새로 만든 예시문제만 제공합니다.
 
@@ -16,6 +16,7 @@
 | 경로 | 내용 |
 |---|---|
 | `apps/exam-platform-vercel` | Vercel + Turso 기반 시험 운영 웹앱 |
+| [`apps/rdp-display-launcher`](apps/rdp-display-launcher/README.md) | Tailscale 기반 Windows RDP 모니터 선택 실행기와 호스트 설정·원복 도구 |
 | [`skills/codeplant-korean-workflows`](skills/codeplant-korean-workflows/README.md) | 실제 HWPX 생성·편집을 포함한 한국어 교육·학교·공공 문서 업무 통합 스킬 |
 | [`skills/organize-meeting-minutes`](skills/organize-meeting-minutes/README.md) | 로컬 전사 우선 회의록 정리 스킬 |
 | `docs/images` | 학생·관리자 실제 실행 화면 |
@@ -48,6 +49,18 @@
 - 관리자 대기자 확인, 시험 시작·종료, 학생 상태 확인
 - 학생별 답안 PDF와 전체 JSON 백업
 - 모바일·아이패드 화면 대응
+
+## RDP 디스플레이 실행기
+
+[`apps/rdp-display-launcher`](apps/rdp-display-launcher/README.md)는 같은 Tailnet의 Windows PC에 기존 사용자 프로필로 접속하면서 단일·듀얼·3개 이상 모니터를 선택할 수 있게 해주는 공개 도구입니다.
+
+- 실행할 때 `mstsc.exe /l`로 실제 RDP 모니터 ID 확인
+- 모니터 번호를 직접 입력해 네이티브 RDP 다중 모니터 세션 실행
+- 개인 Tailscale IPv4 또는 MagicDNS가 들어간 CODEPLANT EXE 생성
+- RDP·NLA·방화벽·그래픽 정책 적용 전 상태 백업과 원복
+- 공인 인터넷에 3389 포트를 열지 않고 Tailscale 내부 연결 사용
+
+개인 주소와 계정이 들어간 완성 EXE는 공개하지 않습니다. README 절차에 따라 각 사용자가 자신의 실행기를 생성합니다.
 
 ## 방법 1: Codex로 실행하기
 

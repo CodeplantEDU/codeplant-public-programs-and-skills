@@ -1,0 +1,12 @@
+screen mode id:i:2
+use multimon:i:1
+selectedmonitors:s:<ID1>,<ID2>
+dynamic resolution:i:0
+smart sizing:i:0
+prompt for credentials:i:1
+authentication level:i:2
+enablecredsspsupport:i:1
+networkautodetect:i:1
+bandwidthautodetect:i:1
+compression:i:1
+full address:s:<TAILSCALE_IP_OR_MAGICDNS>
