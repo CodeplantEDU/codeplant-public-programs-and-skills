@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "CODEPLANT 예시 시험",
-  description: "내부망 전용 알고리즘·산업 AI 연구역량 선발시험",
+  description: "학교와 교육기관에서 수정해 사용할 수 있는 공개 예시 시험 플랫폼",
   icons: { icon: "/codeplant/logo-icon.png" },
 };
 

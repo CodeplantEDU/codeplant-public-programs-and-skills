@@ -221,7 +221,6 @@ async function initializeDatabase() {
   } else {
     await db.prepare("UPDATE exam_state SET is_test_mode = ? WHERE id = 1").bind(activeProject.kind === "test" ? 1 : 0).run();
   }
-  await db.prepare("PRAGMA optimize").run();
 }
 
 export function ensureDatabase() {

@@ -4,6 +4,13 @@
 
 > 공개판에는 특정 학교의 실제 시험문제, 학생 답안, 관리자 암호가 포함되어 있지 않습니다. 화면과 기능을 이해할 수 있도록 새로 만든 예시문제만 제공합니다.
 
+## 바로 체험하기
+
+- 학생 예시 화면: <https://codeplant-exam-platform.vercel.app/>
+- 관리자 화면: <https://codeplant-exam-platform.vercel.app/admin>
+
+관리자 암호는 공개 저장소에 적지 않습니다. 직접 배포할 때 Vercel의 `ADMIN_PIN` 환경변수로 설정하십시오.
+
 ## 들어 있는 항목
 
 | 경로 | 내용 |
