@@ -1,6 +1,6 @@
 ---
 name: codeplant-korean-workflows
-description: Route and complete evidence-based Korean education, school, public-sector, and CodePlant documents. Use for 한글/HWPX forms, school reports, student records, research feedback, curricula, proposals, product sheets, and other Korean deliverables that must preserve supplied templates and avoid invented facts. Do not use for meeting recordings; use organize-meeting-minutes instead.
+description: Create, read, edit, and validate HWPX files and complete evidence-based Korean education, school, public-sector, and CodePlant documents. Use for 한글/HWPX forms, school reports, student records, research feedback, curricula, proposals, product sheets, and other Korean deliverables that must preserve supplied templates and avoid invented facts. Do not use for meeting recordings; use organize-meeting-minutes instead.
 ---
 
 # 코드플랜트 한글 업무 통합
@@ -23,6 +23,18 @@ description: Route and complete evidence-based Korean education, school, public-
 - 원본은 보존하고 결과 파일은 별도 이름으로 저장한다.
 - 제출 전 내용 검사, 파일 구조 검사, 실제 열기 또는 렌더 검사를 수행한다. 검증하지 못한 항목은 명확히 밝힌다.
 - 한글 문장은 짧고 자연스럽게 쓰며, 불필요한 영문식 명사 나열과 과장을 피한다.
+
+## 실제 HWPX 파일 작업
+
+한글 문서 생성·읽기·편집 요청에는 이 스킬에 포함된 `scripts/hwpx_native.py`를 사용한다. Windows, Python 3.10 이상, 한컴오피스 한글의 `HWPFrame.HwpObject` 자동화 인터페이스가 필요하다.
+
+- 새 문서: `create`
+- 본문 추출: `extract`
+- 기존 문서의 정확한 문구를 새 파일에서 치환: `replace`
+- ZIP·XML 구조 검사: `validate`
+- 설치된 한글에서 실제 열기 검사: `open-test`
+
+사용법과 제한은 [references/hwpx-documents.md](references/hwpx-documents.md)를 따른다. 결과를 완성본이라고 부르기 전에 `validate`와 `open-test`가 모두 통과해야 한다. 복잡한 표·도형·이미지 양식은 자동 문구 치환 후 페이지별 육안 검수도 수행한다.
 
 ## 작업 순서
 

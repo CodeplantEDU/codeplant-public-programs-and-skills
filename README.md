@@ -16,8 +16,8 @@
 | 경로 | 내용 |
 |---|---|
 | `apps/exam-platform-vercel` | Vercel + Turso 기반 시험 운영 웹앱 |
-| `skills/codeplant-korean-workflows` | 한국어 교육·학교·공공 문서 업무 통합 스킬 |
-| `skills/organize-meeting-minutes` | 로컬 전사 우선 회의록 정리 스킬 |
+| [`skills/codeplant-korean-workflows`](skills/codeplant-korean-workflows/README.md) | 실제 HWPX 생성·편집을 포함한 한국어 교육·학교·공공 문서 업무 통합 스킬 |
+| [`skills/organize-meeting-minutes`](skills/organize-meeting-minutes/README.md) | 로컬 전사 우선 회의록 정리 스킬 |
 | `docs/images` | 학생·관리자 실제 실행 화면 |
 
 ## 화면 미리보기
