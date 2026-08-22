@@ -1,0 +1,16 @@
+.DS_Store
+Thumbs.db
+**/node_modules/
+**/.next/
+**/.vercel/
+**/.env*
+!**/.env.example
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.log
+**/output/
+**/*.tsbuildinfo
+**/.playwright-cli/
+**/__pycache__/
+**/*.pyc

@@ -1,0 +1,4 @@
+interface:
+  display_name: "회의록 정리"
+  short_description: "녹음과 녹취 문서를 정확한 한국어 회의록으로 정리"
+  default_prompt: "Use $organize-meeting-minutes to transcribe the attached recording and produce copy-ready Korean meeting minutes."
