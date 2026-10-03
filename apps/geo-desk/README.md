@@ -4,7 +4,7 @@ OpenAI API로 질문에 답하고, 답변 안에서 브랜드가 언급되거나
 
 관리자가 로그인하여 API 키와 분석 대상을 한 번 저장하면, 같은 내부망의 사용자는 키를 직접 입력하지 않고 질문할 수 있습니다. 외부 Python 패키지·Node.js·CDN 없이 실행합니다.
 
-![GEO Desk 질문 화면](docs/images/geo-desk.png)
+![GEO Desk 질문 화면](docs/images/geo-desk.jpg)
 
 ## 기능
 
@@ -43,6 +43,19 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 - 관리자 페이지: <http://localhost:8766/admin>
 
 `start.ps1`은 숨김 백그라운드 프로세스로 실행합니다. PC를 재부팅한 뒤에는 다시 실행해야 하며, 자동 시작이나 방화벽 규칙을 등록하지 않습니다.
+
+### 바탕화면에서 켜고 끄기
+
+한 번만 다음 명령을 실행하면 바탕화면 바로가기 두 개를 만듭니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-shortcuts.ps1
+```
+
+- **GEO Desk 실행:** 서버가 꺼져 있으면 시작하고, 준비된 뒤 기본 브라우저에서 채팅 페이지를 엽니다. 이미 실행 중이면 서버를 중복 실행하지 않습니다.
+- **GEO Desk 종료:** 이 프로그램의 프로세스만 확인하여 종료합니다. 키·설정·대화는 유지되며, 열린 브라우저 탭은 사용자가 닫습니다. 다른 내부망 사용자도 서버를 끈 동안에는 접속할 수 없습니다.
+
+바로가기는 설치한 프로그램 폴더를 참조하므로 해당 폴더를 옮기면 새 위치에서 `install-shortcuts.ps1`을 다시 실행하세요. `-Port 8770`으로 바로가기의 실행 포트를 지정할 수도 있습니다.
 
 다른 포트를 쓰려면 다음과 같이 실행합니다.
 
@@ -155,9 +168,11 @@ python diagnose_connection.py
 python -X utf8 -m unittest test_server -v
 ```
 
-별도 `test-data` 폴더와 가짜 API 응답을 사용합니다. 실제 OpenAI를 호출하거나 유료 API 비용을 발생시키지 않습니다. 인증·Origin 검사·키 암호화·설정 유지·방문자별 대화 분리·언급 및 인용 집계·비밀번호 변경 시 세션 만료를 확인합니다.
+격리된 임시 폴더와 가짜 API 응답을 사용합니다. 실제 OpenAI를 호출하거나 유료 API 비용을 발생시키지 않습니다. 인증·Origin 검사·키 암호화·설정 유지·방문자별 대화 분리·언급 및 인용 집계·비밀번호 변경 시 세션 만료를 확인합니다.
 
 실제 Windows 실행 검증에서는 키 인증·모델 접근, 웹 검색을 포함한 답변, 별도 GEO 분석까지 확인했습니다. 이는 검증 환경의 결과이며 각 설치 환경의 API 계정·네트워크·다른 내부망 기기 연결을 보장하지 않습니다.
+
+UX/UI 디자이너·개발자·최종 검수자의 역할별 수정과 확인 범위는 [검수 기록](REVIEW.md)에 정리했습니다.
 
 ## 파일 구성
 
@@ -166,6 +181,9 @@ geo-desk/
   server.py                 HTTP 서버·인증·키 저장·API 연동
   start.ps1                 백그라운드 실행
   stop.ps1                  해당 앱 프로세스만 종료
+  open.ps1                  서버 시작 후 채팅 페이지 열기
+  close.ps1                 서버 종료 후 상태 안내
+  install-shortcuts.ps1     바탕화면 실행·종료 바로가기 생성
   diagnose_connection.py    연결 진단
   test_server.py            가짜 API를 이용한 통합 테스트
   static/                   채팅·관리자 HTML/CSS/JavaScript

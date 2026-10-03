@@ -2,10 +2,12 @@
 import argparse
 import base64
 import ctypes
+from contextlib import contextmanager
 from ctypes import wintypes
 import hashlib
 import hmac
 from http.cookies import SimpleCookie
+from http.client import HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 import json
@@ -27,6 +29,8 @@ DB = DATA / 'geo.sqlite3'
 SLOTS = threading.BoundedSemaphore(3)
 RATE = {}
 RATE_LOCK = threading.Lock()
+ACTIVE_CHATS = set()
+CHAT_LOCK = threading.Lock()
 DEFAULTS = {'model': 'gpt-4.1-mini', 'brand': '', 'website': '', 'web_search': True, 'daily_limit': 100}
 
 
@@ -56,10 +60,15 @@ def protect(text, decrypt=False):
         kernel.LocalFree(target.pbData)
 
 
+@contextmanager
 def db():
     con = sqlite3.connect(DB, timeout=15)
     con.row_factory = sqlite3.Row
-    return con
+    try:
+        with con:
+            yield con
+    finally:
+        con.close()
 
 
 def setting(name, fallback=None):
@@ -71,6 +80,33 @@ def setting(name, fallback=None):
 def set_setting(name, value):
     with db() as con:
         con.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (name, json.dumps(value)))
+
+
+def settings_snapshot():
+    # A key/model change must never mix settings from two administrator saves.
+    with db() as con:
+        rows = con.execute('SELECT name,value FROM settings').fetchall()
+    return {row['name']: json.loads(row['value']) for row in rows}
+
+
+def claim_chat(owner, cid):
+    with CHAT_LOCK:
+        if (owner, cid) in ACTIVE_CHATS:
+            return False
+        ACTIVE_CHATS.add((owner, cid))
+        return True
+
+
+def release_chat(owner, cid):
+    with CHAT_LOCK:
+        ACTIVE_CHATS.discard((owner, cid))
+
+
+def text_field(body, name, default=''):
+    value = body.get(name, default)
+    if not isinstance(value, str):
+        raise ValueError('입력 내용을 확인하세요.')
+    return value
 
 
 def password_hash(password, salt):
@@ -111,8 +147,10 @@ def openai(path, key, payload=None):
                     403: '이 키에 모델 또는 API 접근 권한이 없습니다.',
                     429: 'OpenAI 사용 한도 또는 호출 제한에 도달했습니다. 결제·한도를 확인하세요.'}
         raise ValueError(messages.get(exc.code, f'OpenAI 요청 실패 ({exc.code}). 모델 설정을 확인하고 다시 시도하세요.')) from None
-    except (URLError, TimeoutError):
+    except (URLError, OSError, HTTPException):
         raise ValueError('OpenAI 연결이 지연되거나 인터넷 연결이 없습니다. 잠시 후 다시 시도하세요.') from None
+    except (json.JSONDecodeError, UnicodeError):
+        raise ValueError('OpenAI 응답을 읽을 수 없습니다. 잠시 후 다시 시도하세요.') from None
 
 
 def unpack(response):
@@ -133,16 +171,18 @@ def unpack(response):
                             sources.append({'url': a['url'], 'title': a.get('title', a['url'])})
                 texts.append(content)
                 cursor += len(content) + 2
-    text = '\n\n'.join(texts).strip()
-    if response.get('status') != 'completed' or not text:
+    # Preserve text verbatim so citation offsets still point to the cited spans.
+    text = '\n\n'.join(texts)
+    if response.get('status') != 'completed' or not text.strip():
         raise ValueError('모델 응답이 완료되지 않았습니다. 다른 모델로 변경하거나 다시 시도하세요.')
     return {'text': text, 'sources': sources, 'annotations': annotations}
 
 
-def evaluate(question, history, key):
-    model = setting('model')
-    brand, website = setting('brand', ''), setting('website', '')
-    search = setting('web_search', True)
+def evaluate(question, history, key, config=None):
+    config = config if config is not None else settings_snapshot()
+    model = config['model']
+    brand, website = config.get('brand', ''), config.get('website', '')
+    search = config.get('web_search', True)
     payload = {'model': model, 'store': False, 'max_output_tokens': 3500,
                'instructions': '질문에 한국어로 정확하고 유용하게 답하세요. 검색한 사실에는 출처를 표시하세요. 확인할 수 없는 사실이나 업체를 만들지 마세요.',
                'input': history[-12:] + [{'role': 'user', 'content': question}]}
@@ -236,7 +276,8 @@ class Handler(BaseHTTPRequestHandler):
         return True
 
     def settings_public(self):
-        return {'configured': bool(setting('api_key')), 'brand': setting('brand'), 'website': setting('website'), 'model': setting('model'), 'web_search': setting('web_search')}
+        config = settings_snapshot()
+        return {'configured': bool(config.get('api_key')), **{name: config.get(name) for name in ('brand', 'website', 'model', 'web_search')}}
 
     def do_GET(self):
         if not self.allowed():
@@ -276,6 +317,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed() or not self.csrf():
             return
         try:
+            if self.headers.get_content_type() != 'application/json':
+                return self.reject(415, 'JSON 형식으로 요청하세요.')
+            if self.headers.get('Transfer-Encoding'):
+                return self.reject(400, '입력 형식이 올바르지 않습니다.')
             length = int(self.headers.get('Content-Length', '0'))
             if length < 2 or length > 50000:
                 return self.reject(413, '입력 데이터가 너무 큽니다.')
@@ -283,7 +328,9 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 raise ValueError('입력 형식이 올바르지 않습니다.')
             self.post(body)
-        except (ValueError, TypeError, KeyError) as exc:
+        except json.JSONDecodeError:
+            self.reject(400, '입력 형식이 올바르지 않습니다.')
+        except (ValueError, TypeError, KeyError, UnicodeError) as exc:
             self.reject(400, str(exc) if isinstance(exc, ValueError) else '입력 내용을 확인하세요.')
         except Exception:
             self.reject(500, '서버 처리에 실패했습니다. 잠시 후 다시 시도하세요.')
@@ -298,9 +345,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reject(429, '로그인 시도가 많습니다. 15분 후 다시 시도하세요.')
                 attempts.append(time.time())
                 RATE[ip] = attempts
-            password = str(body.get('password', ''))
+            password = text_field(body, 'password')
             if len(password) > 256 or body.get('username') != 'admin' or not hmac.compare_digest(password_hash(password, setting('admin_salt')), setting('admin_hash')):
                 return self.reject(401, '아이디 또는 비밀번호가 올바르지 않습니다.')
+            with RATE_LOCK:
+                RATE.pop(ip, None)
             _, cookie = self.create_session('admin', 8 * 3600)
             return self.respond(200, {'ok': True}, cookie)
         if path.startswith('/api/admin/'):
@@ -311,41 +360,57 @@ class Handler(BaseHTTPRequestHandler):
                     con.execute('DELETE FROM sessions WHERE token=?', (hashlib.sha256(self.token('geo_admin').encode()).hexdigest(),))
                 return self.respond(200, {'ok': True}, 'geo_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
             if path == '/api/admin/settings':
-                model = str(body.get('model', '')).strip()
-                brand = str(body.get('brand', '')).strip()
-                website = str(body.get('website', '')).strip()
+                model = text_field(body, 'model').strip()
+                brand = text_field(body, 'brand').strip()
+                website = text_field(body, 'website').strip()
                 if not re.fullmatch(r'[a-zA-Z0-9._:-]{1,100}', model):
                     raise ValueError('올바른 모델 ID를 입력하세요.')
                 if len(brand) > 150 or len(website) > 500:
                     raise ValueError('브랜드 또는 사이트 주소가 너무 깁니다.')
-                if website and (urlparse(website).scheme not in ('https', 'http') or not urlparse(website).hostname):
+                parsed = urlparse(website)
+                if website and (parsed.scheme not in ('https', 'http') or not parsed.hostname or parsed.username or parsed.password or any(c.isspace() for c in website)):
                     raise ValueError('사이트 주소는 https://로 시작하는 전체 주소를 입력하세요.')
-                limit = int(body.get('daily_limit', 100))
+                raw_limit = body.get('daily_limit', 100)
+                if isinstance(raw_limit, bool) or not isinstance(raw_limit, (int, str)) or not re.fullmatch(r'\d{1,5}', str(raw_limit)):
+                    raise ValueError('일일 질문 한도는 1~10,000의 정수로 입력하세요.')
+                limit = int(raw_limit)
                 if not 1 <= limit <= 10000 or not isinstance(body.get('web_search'), bool):
                     raise ValueError('설정 값을 확인하세요.')
-                key = str(body.get('api_key', '')).strip()
+                key = text_field(body, 'api_key').strip()
                 if key and (not key.startswith('sk-') or not 20 <= len(key) <= 500 or any(c.isspace() for c in key)):
                     raise ValueError('OpenAI API 키 형식을 확인하세요.')
                 encrypted = protect(key) if key else None
                 with db() as con:
+                    con.execute('BEGIN IMMEDIATE')
+                    previous = con.execute("SELECT value FROM settings WHERE name='model'").fetchone()
                     changes = {'model': model, 'brand': brand, 'website': website, 'daily_limit': limit, 'web_search': body['web_search']}
+                    if previous and json.loads(previous['value']) != model:
+                        changes['key_tested'] = False
                     if encrypted:
                         changes.update(api_key=encrypted, key_hint='••••' + key[-4:], key_tested=False)
                     for k, v in changes.items():
                         con.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (k, json.dumps(v)))
                 return self.respond(200, {'ok': True})
             if path == '/api/admin/test':
-                key = setting('api_key')
+                config = settings_snapshot()
+                key = config.get('api_key')
                 if not key:
                     raise ValueError('API 키를 먼저 저장하세요.')
                 models = openai('models', protect(key, True))
                 ids = {m['id'] for m in models.get('data', [])}
-                if setting('model') not in ids:
+                if config['model'] not in ids:
                     raise ValueError('키 인증은 성공했지만 설정된 모델에 접근할 수 없습니다. 모델 ID를 변경하세요.')
-                set_setting('key_tested', True)
+                with db() as con:
+                    con.execute('BEGIN IMMEDIATE')
+                    current = {r['name']: json.loads(r['value']) for r in con.execute("SELECT name,value FROM settings WHERE name IN ('api_key','model')")}
+                    if current.get('api_key') != key or current.get('model') != config['model']:
+                        return self.reject(409, '검사 중 설정이 변경되었습니다. 저장된 설정으로 다시 검사하세요.')
+                    con.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('key_tested', json.dumps(True)))
                 return self.respond(200, {'ok': True, 'message': '키 인증과 모델 목록 접근을 확인했습니다. 실제 답변·웹 검색 권한은 질문 실행 시 확인됩니다.'})
             if path == '/api/admin/password':
-                old, new = str(body.get('old_password', '')), str(body.get('new_password', ''))
+                old, new = text_field(body, 'old_password'), text_field(body, 'new_password')
+                if len(old) > 256:
+                    raise ValueError('현재 비밀번호가 올바르지 않습니다.')
                 if not 12 <= len(new) <= 256:
                     raise ValueError('새 비밀번호는 12~256자로 입력하세요.')
                 if not hmac.compare_digest(password_hash(old, setting('admin_salt')), setting('admin_hash')):
@@ -358,48 +423,63 @@ class Handler(BaseHTTPRequestHandler):
                 (DATA / 'admin-login.txt').write_text('GEO Desk\n아이디: admin\n비밀번호는 관리자가 변경했습니다.\n', encoding='utf-8')
                 return self.respond(200, {'ok': True}, 'geo_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
             if path == '/api/admin/delete-key':
-                for k, v in [('api_key', ''), ('key_hint', ''), ('key_tested', False)]:
-                    set_setting(k, v)
+                with db() as con:
+                    for k, v in [('api_key', ''), ('key_hint', ''), ('key_tested', False)]:
+                        con.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (k, json.dumps(v)))
                 return self.respond(200, {'ok': True})
         owner = self.session()
         if not owner:
             return self.reject(401, '페이지를 새로고침하세요.')
         if path == '/api/chats/delete':
-            with db() as con:
-                row = con.execute('SELECT id FROM chats WHERE id=? AND owner=?', (body.get('chat_id'), owner)).fetchone()
-                if not row:
-                    return self.reject(404, '대화를 찾을 수 없습니다.')
-                con.execute('DELETE FROM messages WHERE chat=?', (row['id'],))
-                con.execute('DELETE FROM chats WHERE id=?', (row['id'],))
-            return self.respond(200, {'ok': True})
+            cid = text_field(body, 'chat_id')
+            if not claim_chat(owner, cid):
+                return self.reject(429, '이 대화의 질문을 처리 중입니다. 답변이 끝난 뒤 다시 시도하세요.')
+            try:
+                with db() as con:
+                    row = con.execute('SELECT id FROM chats WHERE id=? AND owner=?', (cid, owner)).fetchone()
+                    if not row:
+                        return self.reject(404, '대화를 찾을 수 없습니다.')
+                    con.execute('DELETE FROM messages WHERE chat=?', (row['id'],))
+                    con.execute('DELETE FROM chats WHERE id=?', (row['id'],))
+                return self.respond(200, {'ok': True})
+            finally:
+                release_chat(owner, cid)
         if path == '/api/chat':
-            question = str(body.get('question', '')).strip()
+            question = text_field(body, 'question').strip()
             if not 1 <= len(question) <= 6000:
                 raise ValueError('질문은 1~6,000자로 입력하세요.')
-            encrypted = setting('api_key')
+            config = settings_snapshot()
+            encrypted = config.get('api_key')
             if not encrypted:
                 return self.reject(503, '관리자가 OpenAI API 키를 저장한 뒤 사용할 수 있습니다.')
-            cid = body.get('chat_id')
-            history = []
-            with db() as con:
-                if cid:
-                    if not con.execute('SELECT id FROM chats WHERE id=? AND owner=?', (cid, owner)).fetchone():
-                        return self.reject(404, '대화를 찾을 수 없습니다.')
-                    rows = con.execute('SELECT role,payload FROM messages WHERE chat=? ORDER BY id DESC LIMIT 12', (cid,)).fetchall()
-                    for row in reversed(rows):
-                        data = json.loads(row['payload'])
-                        history.append({'role': row['role'], 'content': data['text']})
+            cid = text_field(body, 'chat_id') if body.get('chat_id') is not None else ''
+            if cid and not re.fullmatch(r'[a-f0-9]{32}', cid):
+                raise ValueError('대화 ID가 올바르지 않습니다.')
             if not SLOTS.acquire(blocking=False):
                 return self.reject(429, '현재 다른 질문을 처리하고 있습니다. 잠시 후 다시 시도하세요.')
+            if not claim_chat(owner, cid):
+                SLOTS.release()
+                return self.reject(429, '이 대화의 질문을 처리 중입니다. 답변이 끝난 뒤 다시 시도하세요.')
+            claimed_cid = cid
             try:
+                history = []
+                with db() as con:
+                    if cid:
+                        if not con.execute('SELECT id FROM chats WHERE id=? AND owner=?', (cid, owner)).fetchone():
+                            return self.reject(404, '대화를 찾을 수 없습니다.')
+                        rows = con.execute('SELECT role,payload FROM messages WHERE chat=? ORDER BY id DESC LIMIT 12', (cid,)).fetchall()
+                        for row in reversed(rows):
+                            data = json.loads(row['payload'])
+                            history.append({'role': row['role'], 'content': data['text']})
+                key = protect(encrypted, True)
                 day = time.strftime('%Y-%m-%d', time.gmtime(time.time() + 9 * 3600))
                 with db() as con:
                     con.execute('BEGIN IMMEDIATE')
                     row = con.execute('SELECT count FROM usage WHERE day=?', (day,)).fetchone()
-                    if row and row['count'] >= setting('daily_limit'):
+                    if row and row['count'] >= config['daily_limit']:
                         return self.reject(429, '오늘의 질문 한도에 도달했습니다. 관리자에게 문의하세요.')
                     con.execute('INSERT INTO usage VALUES (?,1) ON CONFLICT(day) DO UPDATE SET count=count+1', (day,))
-                result = evaluate(question, history, protect(encrypted, True))
+                result = evaluate(question, history, key, config)
                 cid = cid or secrets.token_hex(16)
                 with db() as con:
                     con.execute('INSERT OR IGNORE INTO chats VALUES (?,?,?,?)', (cid, owner, question[:60], time.time()))
@@ -407,6 +487,7 @@ class Handler(BaseHTTPRequestHandler):
                     con.execute('INSERT INTO messages(chat,role,payload,created) VALUES (?,?,?,?)', (cid, 'assistant', json.dumps(result, ensure_ascii=False), time.time()))
                 return self.respond(200, {'chat_id': cid, 'result': result})
             finally:
+                release_chat(owner, claimed_cid)
                 SLOTS.release()
         self.reject(404, '요청을 찾을 수 없습니다.')
 
