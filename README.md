@@ -1,6 +1,6 @@
 # CODEPLANT 공개 프로그램 및 스킬
 
-학교·교육기관에서 수정하여 사용할 수 있는 공개 프로그램과 Codex 스킬 모음입니다. 웹 시험 운영 예시, RDP 디스플레이 실행기, 한국어 문서 업무 스킬을 담았습니다.
+학교·교육기관에서 수정하여 사용할 수 있는 공개 프로그램과 Codex 스킬 모음입니다. 웹 시험 운영 예시, GEO 분석 채팅, RDP 디스플레이 실행기, 한국어 문서 업무 스킬을 담았습니다.
 
 > 공개판에는 특정 학교의 실제 시험문제, 학생 답안, 관리자 암호가 포함되어 있지 않습니다. 화면과 기능을 이해할 수 있도록 새로 만든 예시문제만 제공합니다.
 
@@ -16,6 +16,7 @@
 | 경로 | 내용 |
 |---|---|
 | `apps/exam-platform-vercel` | Vercel + Turso 기반 시험 운영 웹앱 |
+| [`apps/geo-desk`](apps/geo-desk/README.md) | 관리자 API 키 저장·웹 검색·브랜드 언급 및 인용 관측을 제공하는 Windows 내부망 GEO 채팅 |
 | [`apps/rdp-display-launcher`](apps/rdp-display-launcher/README.md) | Tailscale 기반 Windows RDP 모니터 선택 실행기와 호스트 설정·원복 도구 |
 | [`skills/codeplant-korean-workflows`](skills/codeplant-korean-workflows/README.md) | 실제 HWPX 생성·편집을 포함한 한국어 교육·학교·공공 문서 업무 통합 스킬 |
 | [`skills/organize-meeting-minutes`](skills/organize-meeting-minutes/README.md) | 로컬 전사 우선 회의록 정리 스킬 |
@@ -49,6 +50,17 @@
 - 관리자 대기자 확인, 시험 시작·종료, 학생 상태 확인
 - 학생별 답안 PDF와 전체 JSON 백업
 - 모바일·아이패드 화면 대응
+
+## GEO 분석 채팅
+
+[`apps/geo-desk`](apps/geo-desk/README.md)는 OpenAI API 질문 답변에서 브랜드 언급과 공식 사이트 인용을 관측하고 개선안을 생성하는 Windows 내부망 프로그램입니다. 관리자 로그인으로 API 키를 암호화 저장하며, Python 3.12 이상으로 외부 패키지 없이 실행합니다.
+
+```powershell
+Set-Location .\apps\geo-desk
+powershell -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+질문 페이지는 `http://localhost:8766/`, 관리자 페이지는 `http://localhost:8766/admin`입니다. 초기 비밀번호는 첫 실행 시 `data/admin-login.txt`에 무작위 생성됩니다. 실제 API 키·비밀번호·대화 기록은 공개본에 포함하지 않습니다. 질문별 API 비용이 발생할 수 있으며 한 번의 답변 관측은 전체 AI 검색 순위를 대표하지 않습니다. 설치·관리자 설정·내부망 연결·테스트 절차는 해당 README에 정리되어 있습니다.
 
 ## RDP 디스플레이 실행기
 
